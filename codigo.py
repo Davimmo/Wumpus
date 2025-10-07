@@ -160,153 +160,158 @@ class WumpusWorld:
         return counts
 
     def logical_update(self):
-        """Atualiza a base de conhecimento e realiza inferências lógicas."""
-        pos = self.agent_pos
-        if pos in self.visited:
-            return
+            """Atualiza a base de conhecimento e realiza inferências lógicas."""
+            pos = self.agent_pos
+            if pos in self.visited:
+                return
 
-        self.visited.add(pos)
-        self.unknown.discard(pos)
-        self.safe.add(pos)
-        
-        fedor, vento, brilho = self.sense_at_current_pos()
-        self.knowledge_base[pos] = (fedor, vento, brilho)
+            self.visited.add(pos)
+            self.unknown.discard(pos)
+            self.safe.add(pos)
+            
+            fedor, vento, brilho = self.sense_at_current_pos()
+            self.knowledge_base[pos] = (fedor, vento, brilho)
 
-        if brilho:
-            self.has_gold = True
-            print("OURO ENCONTRADO E COLETADO!")
+            if brilho:
+                self.has_gold = True
+                print("OURO ENCONTRADO E COLETADO!")
 
-        # Regra 1: Se não há percepções, todos os vizinhos são seguros.
-        if not fedor and not vento:
-            for neighbor in self.get_adjacent(pos[0], pos[1]):
-                if neighbor not in self.visited:
-                    self.safe.add(neighbor)
-                    self.unknown.discard(neighbor)
+            # Regra 1: Se não há percepções, todos os vizinhos são seguros.
+            if not fedor and not vento:
+                for neighbor in self.get_adjacent(pos[0], pos[1]):
+                    if neighbor not in self.visited:
+                        self.safe.add(neighbor)
+                        self.unknown.discard(neighbor)
 
-        # Regra 2: Inferir perigo por eliminação (Poço ou Wumpus).
-        # Se uma célula tem vento/fedor e todos os seus vizinhos, exceto um, são seguros,
-        # então o vizinho restante deve ser um buraco/wumpus.
-        for cell, (f, v, b) in list(self.knowledge_base.items()): # Usar list() para evitar RuntimeError: dictionary changed size during iteration
-            adjacents = self.get_adjacent(cell[0], cell[1])
-            unknown_neighbors = [n for n in adjacents if n in self.unknown]
-            safe_neighbors = [n for n in adjacents if n in self.safe]
+            # Regra 2: Inferir perigo por eliminação (Poço ou Wumpus).
+            # Se uma célula tem vento/fedor e todos os seus vizinhos, exceto um, são seguros,
+            # então o vizinho restante deve ser um buraco/wumpus.
+            for cell, (f, v, b) in list(self.knowledge_base.items()):
+                adjacents = self.get_adjacent(cell[0], cell[1])
+                unknown_neighbors = [n for n in adjacents if n in self.unknown]
+                safe_neighbors = [n for n in adjacents if n in self.safe]
 
-            if v: # Vento -> Poço
-                # Se todos os vizinhos, exceto um, são seguros, o restante é um buraco
-                if len(adjacents) - len(safe_neighbors) == 1:
-                    for un in unknown_neighbors:
-                        if un not in self.danger: # Evita adicionar duplicatas ou remover algo já inferido
-                            self.danger.add(un)
-                            self.unknown.discard(un)
-                            print(f"Inferido perigo (Buraco) em {un} devido a vento em {cell}")
-            if f: # Fedor -> Wumpus
-                # Se todos os vizinhos, exceto um, são seguros, o restante é o wumpus
-                if len(adjacents) - len(safe_neighbors) == 1:
-                    for un in unknown_neighbors:
-                        if un not in self.danger: # Evita adicionar duplicatas ou remover algo já inferido
-                            self.danger.add(un)
-                            self.unknown.discard(un)
-                            print(f"Inferido perigo (Wumpus) em {un} devido a fedor em {cell}")
+                if v: # Vento -> Poço
+                    # Se todos os vizinhos, exceto um, são seguros, o restante é um buraco
+                    if len(adjacents) - len(safe_neighbors) == 1:
+                        for un in unknown_neighbors:
+                            if un not in self.danger:
+                                self.danger.add(un)
+                                self.unknown.discard(un)
+                                print(f"Inferido perigo (Buraco) em {un} devido a vento em {cell}")
+                if f: # Fedor -> Wumpus
+                    # Se todos os vizinhos, exceto um, são seguros, o restante é o wumpus
+                    if len(adjacents) - len(safe_neighbors) == 1:
+                        for un in unknown_neighbors:
+                            if un not in self.danger:
+                                self.danger.add(un)
+                                self.unknown.discard(un)
+                                print(f"Inferido perigo (Wumpus) em {un} devido a fedor em {cell}")
 
+            # Regra 2.5: Inferir perigo por múltiplas percepções (Wumpus e Buracos)
+            wumpus_candidates = collections.defaultdict(int)
+            hole_candidates = collections.defaultdict(int)
 
+            for known_cell, (fedor_kb, vento_kb, brilho_kb) in self.knowledge_base.items():
+                for neighbor_of_known in self.get_adjacent(known_cell[0], known_cell[1]):
+                    if neighbor_of_known in self.unknown:
+                        if fedor_kb: wumpus_candidates[neighbor_of_known] += 1
+                        if vento_kb: hole_candidates[neighbor_of_known] += 1
 
-
-
-
-        # Regra 2.5: Inferir perigo por múltiplas percepções (Wumpus e Buracos)
-        # Refatorando a contagem de percepções para ser mais genérica e precisa
-        wumpus_candidates = collections.defaultdict(int)
-        hole_candidates = collections.defaultdict(int)
-
-        for known_cell, (fedor_kb, vento_kb, brilho_kb) in self.knowledge_base.items():
-            for neighbor_of_known in self.get_adjacent(known_cell[0], known_cell[1]):
-                if neighbor_of_known in self.unknown:
-                    if fedor_kb: wumpus_candidates[neighbor_of_known] += 1
-                    if vento_kb: hole_candidates[neighbor_of_known] += 1
-
-        # --- Inferência de Wumpus por múltiplos fedores ---
-        inferred_wumpus = None
-        for cell, count in wumpus_candidates.items():
-            if count > 1:  # Duas ou mais células com fedor apontam para ela
-                inferred_wumpus = cell
-                break
-
-        if inferred_wumpus and inferred_wumpus not in self.danger:
-            self.danger.add(inferred_wumpus)
-            self.unknown.discard(inferred_wumpus)
-            print(f"Inferido Wumpus em {inferred_wumpus} por múltiplas percepções adjacentes de fedor.")
-
-            # Marca as células adjacentes ao Wumpus inferido como seguras, exceto buracos
-            for neighbor in self.get_adjacent(inferred_wumpus[0], inferred_wumpus[1]):
-                if neighbor not in self.holes and neighbor not in self.danger:
-                    self.safe.add(neighbor)
-                    self.unknown.discard(neighbor)
-                    print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus inferido).")
-
-        # --- Inferência de Buracos por múltiplas percepções de vento ---
-        # Considerando que há 2 buracos no jogo
-        # Regra: Se uma célula desconhecida possui duas ou mais células adjacentes com vento,
-        # essa célula deve ser considerada um buraco, especialmente quando a localização de uma das bombas já é conhecida.
-        
-        # Verifica se a localização de pelo menos uma bomba (Wumpus ou Buraco) já é conhecida
-        known_bomb_exists = (self.wumpus in self.danger) or (len([h for h in self.holes if h in self.danger]) >= 1)
-
-        for cell, count in hole_candidates.items():
-            if cell not in self.danger: # Apenas se ainda não foi marcado como perigoso
-                # Condição 1: Uma única célula desconhecida adjacente a uma célula com vento (Regra 2.1 e 2.2 já cobrem isso, mas reforçando)
-                # Esta parte é mais complexa de inferir apenas com \'hole_candidates\', pois depende do contexto da célula com vento.
-                # A Regra 2.2 já lida com o caso de um único vizinho desconhecido para uma célula com vento.
-
-                # Condição 2: Adjacente a 3 ou mais células com vento (Regra 2.5.2 anterior)
-                if count >= 3:
-                    self.danger.add(cell)
-                    self.unknown.discard(cell)
-                    print(f"Inferido perigo (Buraco) em {cell} por ser adjacente a 3 ou mais células com vento.")
-                
-                # Condição 3: Duas ou mais células adjacentes com vento E uma bomba já é conhecida
-                elif count >= 2 and known_bomb_exists:
-                    self.danger.add(cell)
-                    self.unknown.discard(cell)
-                    print(f"Inferido perigo (Buraco) em {cell} por múltiplas percepções de vento e bomba conhecida.")
-
-        # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes às que têm fedor são seguras (exceto buracos).
-        # Raciocínio:
-        # Se o agente já sabe onde está o Wumpus, qualquer célula que tem fedor
-        # só o tem por estar adjacente ao Wumpus. Assim, as demais adjacentes dessa
-        # célula não podem conter o Wumpus — logo, são seguras a menos que sejam buracos.
-
-        if self.wumpus in self.danger:  # Se o Wumpus foi inferido
-            wumpus_pos = self.wumpus
-        else:
-            # Caso o agente tenha inferido logicamente um Wumpus (sem saber da posição real)
-            inferred_wumpus_list = [c for c in self.danger if c != self.wumpus]
-            wumpus_pos = inferred_wumpus_list[0] if inferred_wumpus_list else None
-
-        if wumpus_pos:
-            for cell, (fedor, vento, brilho) in self.knowledge_base.items():
-                if fedor:
-                    for neighbor in self.get_adjacent(cell[0], cell[1]):
-                        if neighbor not in self.holes and neighbor not in self.danger:
-                            self.safe.add(neighbor)
-                            self.unknown.discard(neighbor)
-                            print(f"Inferido segurança em {neighbor} (adjacente a célula com fedor e Wumpus conhecido).")
-
-        # --- Verificação de Game Over mais robusta ---
-        # Se não há mais células seguras e não visitadas, e o agente não tem o ouro e não está na posição inicial,
-        # e não há caminho para nenhuma célula segura e não visitada, então é Game Over.
-        safe_unvisited = {c for c in self.safe if c not in self.visited and c not in self.danger}
-        if not self.has_gold and not self.victory and not safe_unvisited and self.agent_pos != self.start_pos:
-            # Verifica se há algum caminho para alguma célula segura e não visitada a partir de qualquer célula segura
-            can_reach_any_safe_unvisited = False
-            for s_cell in self.safe:
-                if self._find_path_to_target(s_cell, None, self.safe - self.danger, target_is_set=True, target_set=safe_unvisited):
-                    can_reach_any_safe_unvisited = True
+            # --- Inferência de Wumpus por múltiplos fedores ---
+            inferred_wumpus = None
+            for cell, count in wumpus_candidates.items():
+                if count > 1:  # Duas ou mais células com fedor apontam para ela
+                    inferred_wumpus = cell
                     break
 
-            if not can_reach_any_safe_unvisited:
-                self.game_over = True
-                print("GAME OVER: Agente preso ou sem movimentos seguros para explorar novas células.")
+            if inferred_wumpus and inferred_wumpus not in self.danger:
+                self.danger.add(inferred_wumpus)
+                self.unknown.discard(inferred_wumpus)
+                print(f"Inferido Wumpus em {inferred_wumpus} por múltiplas percepções adjacentes de fedor.")
 
+                # Marca as células adjacentes ao Wumpus inferido como seguras, exceto buracos
+                for neighbor in self.get_adjacent(inferred_wumpus[0], inferred_wumpus[1]):
+                    if neighbor not in self.holes and neighbor not in self.danger:
+                        self.safe.add(neighbor)
+                        self.unknown.discard(neighbor)
+                        print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus inferido).")
+
+            # --- Inferência de Buracos por múltiplas percepções de vento ---
+            known_bomb_exists = (self.wumpus in self.danger) or (len([h for h in self.holes if h in self.danger]) >= 1)
+
+            for cell, count in hole_candidates.items():
+                if cell not in self.danger:
+                    if count >= 3:
+                        self.danger.add(cell)
+                        self.unknown.discard(cell)
+                        print(f"Inferido perigo (Buraco) em {cell} por ser adjacente a 3 ou mais células com vento.")
+                    
+                    elif count >= 2 and known_bomb_exists:
+                        self.danger.add(cell)
+                        self.unknown.discard(cell)
+                        print(f"Inferido perigo (Buraco) em {cell} por múltiplas percepções de vento e bomba conhecida.")
+
+            # <CHANGE> Nova Regra: Se ambos os buracos foram inferidos, marcar células desconhecidas como seguras
+            # Conta quantos buracos foram inferidos (estão em danger)
+            inferred_holes = [cell for cell in self.danger if cell in self.holes or 
+                            any(self.knowledge_base.get(adj, (False, False, False))[1] 
+                                for adj in self.get_adjacent(cell[0], cell[1]))]
+            
+            # Conta buracos inferidos de forma mais precisa
+            inferred_holes_count = len([h for h in self.holes if h in self.danger])
+            
+            # Se ambos os buracos foram inferidos (há exatamente 2 buracos no jogo)
+            if inferred_holes_count >= 2:
+                print(f"Ambos os buracos foram inferidos! Marcando células desconhecidas restantes como seguras (exceto Wumpus).")
+                for unknown_cell in list(self.unknown):  # Usar list() para evitar modificação durante iteração
+                    # Marcar como seguro se não for o Wumpus
+                    if unknown_cell != self.wumpus and unknown_cell not in self.danger:
+                        self.safe.add(unknown_cell)
+                        self.unknown.discard(unknown_cell)
+                        print(f"Inferido segurança em {unknown_cell} (ambos os buracos já foram localizados).")
+            
+            # <CHANGE> Nova Regra: Se o Wumpus foi inferido, marcar células desconhecidas como seguras (exceto buracos)
+            # Verifica se o Wumpus foi inferido
+            wumpus_inferred = self.wumpus in self.danger or inferred_wumpus is not None
+            
+            if wumpus_inferred and inferred_holes_count >= 2:
+                # Se tanto o Wumpus quanto ambos os buracos foram inferidos, todas as células desconhecidas são seguras
+                print(f"Wumpus e ambos os buracos inferidos! Todas as células desconhecidas são seguras.")
+                for unknown_cell in list(self.unknown):
+                    if unknown_cell not in self.danger:
+                        self.safe.add(unknown_cell)
+                        self.unknown.discard(unknown_cell)
+                        print(f"Inferido segurança em {unknown_cell} (todos os perigos foram localizados).")
+
+            # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes às que têm fedor são seguras (exceto buracos).
+            if self.wumpus in self.danger:
+                wumpus_pos = self.wumpus
+            else:
+                inferred_wumpus_list = [c for c in self.danger if c != self.wumpus]
+                wumpus_pos = inferred_wumpus_list[0] if inferred_wumpus_list else None
+
+            if wumpus_pos:
+                for cell, (fedor, vento, brilho) in self.knowledge_base.items():
+                    if fedor:
+                        for neighbor in self.get_adjacent(cell[0], cell[1]):
+                            if neighbor not in self.holes and neighbor not in self.danger:
+                                self.safe.add(neighbor)
+                                self.unknown.discard(neighbor)
+                                print(f"Inferido segurança em {neighbor} (adjacente a célula com fedor e Wumpus conhecido).")
+
+            # --- Verificação de Game Over mais robusta ---
+            safe_unvisited = {c for c in self.safe if c not in self.visited and c not in self.danger}
+            if not self.has_gold and not self.victory and not safe_unvisited and self.agent_pos != self.start_pos:
+                can_reach_any_safe_unvisited = False
+                for s_cell in self.safe:
+                    if self._find_path_to_target(s_cell, None, self.safe - self.danger, target_is_set=True, target_set=safe_unvisited):
+                        can_reach_any_safe_unvisited = True
+                        break
+
+                if not can_reach_any_safe_unvisited:
+                    self.game_over = True
+                    print("GAME OVER: Agente preso ou sem movimentos seguros para explorar novas células.")
         
                     
     def step(self):
