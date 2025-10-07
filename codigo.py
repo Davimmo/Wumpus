@@ -285,6 +285,22 @@ class WumpusWorld:
                             self.unknown.discard(neighbor)
                             print(f"Inferido segurança em {neighbor} (adjacente a célula com fedor e Wumpus conhecido).")
 
+        # --- Verificação de Game Over mais robusta ---
+        # Se não há mais células seguras e não visitadas, e o agente não tem o ouro e não está na posição inicial,
+        # e não há caminho para nenhuma célula segura e não visitada, então é Game Over.
+        safe_unvisited = {c for c in self.safe if c not in self.visited and c not in self.danger}
+        if not self.has_gold and not self.victory and not safe_unvisited and self.agent_pos != self.start_pos:
+            # Verifica se há algum caminho para alguma célula segura e não visitada a partir de qualquer célula segura
+            can_reach_any_safe_unvisited = False
+            for s_cell in self.safe:
+                if self._find_path_to_target(s_cell, None, self.safe - self.danger, target_is_set=True, target_set=safe_unvisited):
+                    can_reach_any_safe_unvisited = True
+                    break
+
+            if not can_reach_any_safe_unvisited:
+                self.game_over = True
+                print("GAME OVER: Agente preso ou sem movimentos seguros para explorar novas células.")
+
         
                     
     def step(self):
@@ -332,9 +348,15 @@ class WumpusWorld:
                 else:
                     # Se todas as células seguras foram visitadas, o agente pode estar preso ou o mapa é muito restritivo
                     # Tenta mover para uma célula segura adjacente já visitada para não ficar parado
-                    adj_safe_visited = [c for c in self.get_adjacent(self.agent_pos[0], self.agent_pos[0]) if c in safe_visited]
+                    adj_safe_visited = [c for c in self.get_adjacent(self.agent_pos[0], self.agent_pos[1]) if c in safe_visited]
                     if adj_safe_visited:
                         next_pos = random.choice(adj_safe_visited)
+                    else:
+                        # Se não há mais células seguras para explorar e o ouro não foi encontrado,
+                        # o agente pode estar preso ou não há mais movimentos possíveis.
+                        # Neste caso, o jogo deve terminar, mas não como uma derrota se ainda houver células desconhecidas.
+                        # A condição de game over será ajustada na próxima fase.
+                        pass
 
         # --- GARANTIA: O agente nunca entra na célula do Wumpus ---
         if next_pos == self.wumpus:
@@ -360,10 +382,7 @@ class WumpusWorld:
             elif self.has_gold and self.agent_pos == self.start_pos:
                 print("VITÓRIA! O agente escapou com o ouro.")
                 self.victory = True
-        else:
-            # Se não há movimentos possíveis, o agente está preso ou o jogo deve terminar
-            print("Agente preso ou sem movimentos seguros. Fim de jogo.")
-            self.game_over = True
+
 
     def back(self):
         """Volta para a posição anterior."""
