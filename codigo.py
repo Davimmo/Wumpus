@@ -208,48 +208,29 @@ class WumpusWorld:
                             self.unknown.discard(un)
                             print(f"Inferido perigo (Wumpus) em {un} devido a fedor em {cell}")
 
-        # Regra 2.5: Inferir perigo por múltiplas percepções
-        wumpus_counts = self._get_percept_counts("wumpus")
-        for cell, count in wumpus_counts.items():
-            if count > 1 and cell not in self.danger:
-                self.danger.add(cell)
-                self.unknown.discard(cell)
-                print(f"Inferido perigo (Wumpus) em {cell} por múltiplas percepções de fedor.")
 
-        hole_counts = self._get_percept_counts("hole")
-        for cell, count in hole_counts.items():
-            if count > 1 and cell not in self.danger:
-                self.danger.add(cell)
-                self.unknown.discard(cell)
-                print(f"Inferido perigo (Buraco) em {cell} por múltiplas percepções de vento.")
 
-        # Regra 3: Inferir segurança por eliminação.
-        # Se uma célula com perigo (vento/fedor) tem todos os seus vizinhos conhecidos como seguros,
-        # então o perigo não pode estar ali. (Isso é mais para refinar, mas a regra 2 já lida com isso indiretamente)
-        # No entanto, podemos inferir que se uma célula *não* tem vento/fedor, seus vizinhos são seguros.
-        # Isso já é coberto pela Regra 1. A otimização aqui seria mais complexa, envolvendo a contagem de perigos.
-        # Por enquanto, a Regra 2 aprimorada é um bom passo.
 
-        # --- NOVA REGRA: Inferir posição exata do Wumpus por múltiplos fedores ---
-        # Se uma célula desconhecida é adjacente a duas ou mais células que têm fedor,
-        # o agente pode inferir que o Wumpus está nessa célula.
-        
-        inferred_wumpus = None
+
+
+        # Regra 2.5: Inferir perigo por múltiplas percepções (Wumpus e Buracos)
+        # Refatorando a contagem de percepções para ser mais genérica e precisa
         wumpus_candidates = collections.defaultdict(int)
+        hole_candidates = collections.defaultdict(int)
 
-        for pos, (fedor, vento, brilho) in self.knowledge_base.items():
-            if fedor:
-                for neighbor in self.get_adjacent(pos[0], pos[1]):
-                    if neighbor in self.unknown:
-                        wumpus_candidates[neighbor] += 1
+        for known_cell, (fedor_kb, vento_kb, brilho_kb) in self.knowledge_base.items():
+            for neighbor_of_known in self.get_adjacent(known_cell[0], known_cell[1]):
+                if neighbor_of_known in self.unknown:
+                    if fedor_kb: wumpus_candidates[neighbor_of_known] += 1
+                    if vento_kb: hole_candidates[neighbor_of_known] += 1
 
-        # Procura célula com múltiplas evidências de fedor
+        # --- Inferência de Wumpus por múltiplos fedores ---
+        inferred_wumpus = None
         for cell, count in wumpus_candidates.items():
-            if count > 1:  # duas ou mais células com fedor apontam pra ela
+            if count > 1:  # Duas ou mais células com fedor apontam para ela
                 inferred_wumpus = cell
                 break
 
-        # Se o Wumpus foi inferido logicamente
         if inferred_wumpus and inferred_wumpus not in self.danger:
             self.danger.add(inferred_wumpus)
             self.unknown.discard(inferred_wumpus)
@@ -262,6 +243,31 @@ class WumpusWorld:
                     self.unknown.discard(neighbor)
                     print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus inferido).")
 
+        # --- Inferência de Buracos por múltiplas percepções de vento ---
+        # Considerando que há 2 buracos no jogo
+        # Regra: Se uma célula desconhecida possui duas ou mais células adjacentes com vento,
+        # essa célula deve ser considerada um buraco, especialmente quando a localização de uma das bombas já é conhecida.
+        
+        # Verifica se a localização de pelo menos uma bomba (Wumpus ou Buraco) já é conhecida
+        known_bomb_exists = (self.wumpus in self.danger) or (len([h for h in self.holes if h in self.danger]) >= 1)
+
+        for cell, count in hole_candidates.items():
+            if cell not in self.danger: # Apenas se ainda não foi marcado como perigoso
+                # Condição 1: Uma única célula desconhecida adjacente a uma célula com vento (Regra 2.1 e 2.2 já cobrem isso, mas reforçando)
+                # Esta parte é mais complexa de inferir apenas com \'hole_candidates\', pois depende do contexto da célula com vento.
+                # A Regra 2.2 já lida com o caso de um único vizinho desconhecido para uma célula com vento.
+
+                # Condição 2: Adjacente a 3 ou mais células com vento (Regra 2.5.2 anterior)
+                if count >= 3:
+                    self.danger.add(cell)
+                    self.unknown.discard(cell)
+                    print(f"Inferido perigo (Buraco) em {cell} por ser adjacente a 3 ou mais células com vento.")
+                
+                # Condição 3: Duas ou mais células adjacentes com vento E uma bomba já é conhecida
+                elif count >= 2 and known_bomb_exists:
+                    self.danger.add(cell)
+                    self.unknown.discard(cell)
+                    print(f"Inferido perigo (Buraco) em {cell} por múltiplas percepções de vento e bomba conhecida.")
 
         # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes às que têm fedor são seguras (exceto buracos).
         # Raciocínio:
