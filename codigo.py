@@ -161,10 +161,6 @@ class WumpusWorld:
 
     def logical_update(self):
         """Atualiza a base de conhecimento e realiza inferências lógicas."""
-        # O agente nunca considera a célula do Wumpus como segura
-        self.safe.discard(self.wumpus)
-        self.danger.add(self.wumpus)
-        self.unknown.discard(self.wumpus)
         pos = self.agent_pos
         if pos in self.visited:
             return
