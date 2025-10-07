@@ -336,13 +336,26 @@ class WumpusWorld:
                     if adj_safe_visited:
                         next_pos = random.choice(adj_safe_visited)
 
+        # --- GARANTIA: O agente nunca entra na célula do Wumpus ---
+        if next_pos == self.wumpus:
+            print(f"Evitei mover para {next_pos} (Wumpus conhecido). Procurando alternativa segura.")
+            # remove essa célula do conjunto seguro para evitar futuros erros
+            self.safe.discard(next_pos)
+            self.danger.add(next_pos)
+            self.unknown.discard(next_pos)
+            next_pos = None
+
+        # Se ainda há movimento possível
         if next_pos:
             self.history.append(self.agent_pos)
             self.agent_pos = next_pos
-            
+
             # Verifica as condições de vitória/derrota após o movimento
-            if self.agent_pos in self.holes or self.agent_pos == self.wumpus:
-                print("GAME OVER! Agente morreu.")
+            if self.agent_pos in self.holes:
+                print("GAME OVER! Agente caiu em um buraco.")
+                self.game_over = True
+            elif self.agent_pos == self.wumpus:
+                print("GAME OVER! O agente foi morto pelo Wumpus.")
                 self.game_over = True
             elif self.has_gold and self.agent_pos == self.start_pos:
                 print("VITÓRIA! O agente escapou com o ouro.")
