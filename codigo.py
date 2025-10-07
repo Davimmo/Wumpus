@@ -230,17 +230,62 @@ class WumpusWorld:
         # Isso já é coberto pela Regra 1. A otimização aqui seria mais complexa, envolvendo a contagem de perigos.
         # Por enquanto, a Regra 2 aprimorada é um bom passo.
 
-        # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes (que não são buracos) são seguras.
-        # O agente sabe a localização real do Wumpus (self.wumpus) para fins de simulação.
-        # Se o agente já inferiu a localização do Wumpus (ou se ele está no mapa de perigos),
-        # ele pode considerar as células adjacentes como seguras, desde que não sejam buracos.
-        if self.wumpus in self.danger: # Se o Wumpus foi inferido como perigoso
-            for neighbor in self.get_adjacent(self.wumpus[0], self.wumpus[1]):
-                # Se o vizinho não é um buraco e não foi marcado como perigoso por outra razão (ex: vento)
+        # --- NOVA REGRA: Inferir posição exata do Wumpus por múltiplos fedores ---
+        # Se uma célula desconhecida é adjacente a duas ou mais células que têm fedor,
+        # o agente pode inferir que o Wumpus está nessa célula.
+        
+        inferred_wumpus = None
+        wumpus_candidates = collections.defaultdict(int)
+
+        for pos, (fedor, vento, brilho) in self.knowledge_base.items():
+            if fedor:
+                for neighbor in self.get_adjacent(pos[0], pos[1]):
+                    if neighbor in self.unknown:
+                        wumpus_candidates[neighbor] += 1
+
+        # Procura célula com múltiplas evidências de fedor
+        for cell, count in wumpus_candidates.items():
+            if count > 1:  # duas ou mais células com fedor apontam pra ela
+                inferred_wumpus = cell
+                break
+
+        # Se o Wumpus foi inferido logicamente
+        if inferred_wumpus and inferred_wumpus not in self.danger:
+            self.danger.add(inferred_wumpus)
+            self.unknown.discard(inferred_wumpus)
+            print(f"Inferido Wumpus em {inferred_wumpus} por múltiplas percepções adjacentes de fedor.")
+
+            # Marca as células adjacentes ao Wumpus inferido como seguras, exceto buracos
+            for neighbor in self.get_adjacent(inferred_wumpus[0], inferred_wumpus[1]):
                 if neighbor not in self.holes and neighbor not in self.danger:
                     self.safe.add(neighbor)
                     self.unknown.discard(neighbor)
-                    print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus conhecido).")
+                    print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus inferido).")
+
+
+        # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes às que têm fedor são seguras (exceto buracos).
+        # Raciocínio:
+        # Se o agente já sabe onde está o Wumpus, qualquer célula que tem fedor
+        # só o tem por estar adjacente ao Wumpus. Assim, as demais adjacentes dessa
+        # célula não podem conter o Wumpus — logo, são seguras a menos que sejam buracos.
+
+        if self.wumpus in self.danger:  # Se o Wumpus foi inferido
+            wumpus_pos = self.wumpus
+        else:
+            # Caso o agente tenha inferido logicamente um Wumpus (sem saber da posição real)
+            inferred_wumpus_list = [c for c in self.danger if c != self.wumpus]
+            wumpus_pos = inferred_wumpus_list[0] if inferred_wumpus_list else None
+
+        if wumpus_pos:
+            for cell, (fedor, vento, brilho) in self.knowledge_base.items():
+                if fedor:
+                    for neighbor in self.get_adjacent(cell[0], cell[1]):
+                        if neighbor not in self.holes and neighbor not in self.danger:
+                            self.safe.add(neighbor)
+                            self.unknown.discard(neighbor)
+                            print(f"Inferido segurança em {neighbor} (adjacente a célula com fedor e Wumpus conhecido).")
+
+        
                     
     def step(self):
         """Executa uma jogada do agente."""
