@@ -229,6 +229,18 @@ class WumpusWorld:
         # No entanto, podemos inferir que se uma célula *não* tem vento/fedor, seus vizinhos são seguros.
         # Isso já é coberto pela Regra 1. A otimização aqui seria mais complexa, envolvendo a contagem de perigos.
         # Por enquanto, a Regra 2 aprimorada é um bom passo.
+
+        # Regra 4: Se a localização do Wumpus é conhecida, as células adjacentes (que não são buracos) são seguras.
+        # O agente sabe a localização real do Wumpus (self.wumpus) para fins de simulação.
+        # Se o agente já inferiu a localização do Wumpus (ou se ele está no mapa de perigos),
+        # ele pode considerar as células adjacentes como seguras, desde que não sejam buracos.
+        if self.wumpus in self.danger: # Se o Wumpus foi inferido como perigoso
+            for neighbor in self.get_adjacent(self.wumpus[0], self.wumpus[1]):
+                # Se o vizinho não é um buraco e não foi marcado como perigoso por outra razão (ex: vento)
+                if neighbor not in self.holes and neighbor not in self.danger:
+                    self.safe.add(neighbor)
+                    self.unknown.discard(neighbor)
+                    print(f"Inferido segurança em {neighbor} (adjacente ao Wumpus conhecido).")
                     
     def step(self):
         """Executa uma jogada do agente."""
